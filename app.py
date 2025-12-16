@@ -54,6 +54,13 @@ tabs = st.tabs(["Prediksi GMV", "Optimasi Budget (Simulasi)", "Interpretasi Mode
 def to_dataframe(tv: float, radio: float, news: float) -> pd.DataFrame:
     return pd.DataFrame([[tv, radio, news]], columns=feature_names)
 
+def fmt_id(x: float, decimals: int = 2) -> str:
+    """Format angka gaya Indonesia: ribuan '.', desimal ','."""
+    if x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x))):
+        return "-"
+    s = f"{x:,.{decimals}f}"          
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")  
+    return s
 
 
 with tabs[0]:
@@ -73,12 +80,13 @@ with tabs[0]:
     total_spend = float(tv + radio + news)
     roas = pred_gmv / total_spend if total_spend > 0 else np.nan
 
-    st.success(f"Prediksi GMV (proxy Sales): **{pred_gmv:,.3f}**")
-    st.write(f"Total spend: **{total_spend:,.3f}**")
+    st.success(f"Prediksi GMV (proxy Sales): **{fmt_id(pred_gmv, 2)}**")
+    st.write(f"Total spend: **{fmt_id(total_spend, 2)}**")
     if np.isfinite(roas):
-        st.write(f"Estimated ROAS (GMV/Spend): **{roas:,.3f}**")
+        st.write(f"Estimated ROAS (GMV/Spend): **{fmt_id(roas, 3)}**")
     else:
         st.warning("ROAS tidak bisa dihitung jika total spend = 0.")
+
 
     with st.expander("Lihat input (kolom asli dataset)"):
         st.dataframe(X_new, use_container_width=True)
@@ -143,12 +151,12 @@ with tabs[1]:
 
         st.success("Rekomendasi budget terbaik (berdasarkan simulasi + model):")
         st.write(
-            f"- {UI_LABELS['TV']}: **{best['TV']:.3f}**\n"
-            f"- {UI_LABELS['Radio']}: **{best['Radio']:.3f}**\n"
-            f"- {UI_LABELS['Newspaper']}: **{best['Newspaper']:.3f}**\n"
-            f"- Total spend: **{best['total_spend']:.3f}**\n"
-            f"- Prediksi GMV: **{best['pred_gmv']:.3f}**\n"
-            f"- Prediksi ROAS: **{best['pred_roas']:.3f}**"
+            f"- {UI_LABELS['TV']}: **{fmt_id(float(best['TV']), 2)}**\n"
+            f"- {UI_LABELS['Radio']}: **{fmt_id(float(best['Radio']), 2)}**\n"
+            f"- {UI_LABELS['Newspaper']}: **{fmt_id(float(best['Newspaper']), 2)}**\n"
+            f"- Total spend: **{fmt_id(float(best['total_spend']), 2)}**\n"
+            f"- Prediksi GMV: **{fmt_id(float(best['pred_gmv']), 2)}**\n"
+            f"- Prediksi ROAS: **{fmt_id(float(best['pred_roas']), 3)}**"
         )
 
         st.markdown("### Top 10 skenario terbaik (kolom asli dataset)")
