@@ -25,7 +25,7 @@ if not os.path.exists(MODEL_PATH):
     st.error(
         "Model belum tersedia.\n\n"
         "Langkah:\n"
-        "1) Pastikan `data/advertising.csv` ada\n"
+        "1) Pastikan `models/lr_pipeline.joblib` ada\n"
         "2) Jalankan: `python train.py`\n"
         "3) Jalankan: `streamlit run app.py`"
     )
@@ -36,7 +36,6 @@ pipeline = bundle["pipeline"]
 feature_names = bundle["feature_names"]
 metrics = bundle.get("metrics", {})
 mapping = bundle.get("channel_mapping", {})
-
 
 UI_LABELS = {
     "TV": "Meta Ads Spend",
@@ -54,13 +53,14 @@ tabs = st.tabs(["Prediksi GMV", "Optimasi Budget (Simulasi)", "Interpretasi Mode
 def to_dataframe(tv: float, radio: float, news: float) -> pd.DataFrame:
     return pd.DataFrame([[tv, radio, news]], columns=feature_names)
 
+
 def fmt_id(x: float, decimals: int = 2) -> str:
-    """Format angka gaya Indonesia: ribuan '.', desimal ','."""
     if x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x))):
         return "-"
-    s = f"{x:,.{decimals}f}"          
-    s = s.replace(",", "X").replace(".", ",").replace("X", ".")  
+    s = f"{x:,.{decimals}f}"
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return s
+
 
 
 with tabs[0]:
@@ -87,7 +87,6 @@ with tabs[0]:
     else:
         st.warning("ROAS tidak bisa dihitung jika total spend = 0.")
 
-
     with st.expander("Lihat input (kolom asli dataset)"):
         st.dataframe(X_new, use_container_width=True)
         st.caption(f"Mapping label: {mapping}")
@@ -98,8 +97,7 @@ with tabs[1]:
     st.subheader("Optimasi sederhana (simulasi banyak skenario)")
 
     st.write(
-        "Karena Linear Regression adalah model prediksi, optimasi dilakukan dengan **simulasi**: "
-        "kita generate banyak kombinasi budget yang memenuhi batasan, prediksi GMV untuk tiap kombinasi, "
+        "Optimasi dilakukan dengan simulasi: generate banyak kombinasi budget, prediksi GMV tiap kombinasi, "
         "lalu pilih kombinasi terbaik."
     )
 
@@ -120,16 +118,42 @@ with tabs[1]:
 
     objective = st.selectbox("Kriteria terbaik", ["GMV tertinggi", "ROAS tertinggi"])
 
+
+    min_sum = tv_min + radio_min + news_min
+    if tv_min > tv_max or radio_min > radio_max or news_min > news_max:
+        st.error("Constraint tidak valid: ada nilai min yang lebih besar dari max.")
+        st.stop()
+
+    if min_sum > total_budget:
+        st.error(
+            f"Constraint tidak valid: jumlah minimum budget ({fmt_id(min_sum,2)}) "
+            f"lebih besar dari total budget ({fmt_id(total_budget,2)})."
+        )
+        st.stop()
+
     if st.button("Jalankan Optimasi"):
         rng = np.random.default_rng(42)
 
+        
         low = np.array([tv_min, radio_min, news_min], dtype=float)
         high = np.array([tv_max, radio_max, news_max], dtype=float)
         raw = rng.uniform(low=low, high=high, size=(n_samples, 3))
 
+        
         sums = raw.sum(axis=1, keepdims=True)
         sums[sums == 0] = 1.0
         scaled = raw / sums * float(total_budget)
+
+        
+        tv_ok = (scaled[:, 0] >= tv_min) & (scaled[:, 0] <= tv_max)
+        r_ok = (scaled[:, 1] >= radio_min) & (scaled[:, 1] <= radio_max)
+        n_ok = (scaled[:, 2] >= news_min) & (scaled[:, 2] <= news_max)
+        ok = tv_ok & r_ok & n_ok
+        scaled = scaled[ok]
+
+        if scaled.shape[0] == 0:
+            st.warning("Tidak ada skenario yang memenuhi constraint. Coba longgarkan batas min/max.")
+            st.stop()
 
         X_sim = pd.DataFrame(scaled, columns=feature_names)
         pred_sim = pipeline.predict(X_sim).astype(float)
@@ -159,7 +183,7 @@ with tabs[1]:
             f"- Prediksi ROAS: **{fmt_id(float(best['pred_roas']), 3)}**"
         )
 
-        st.markdown("### Top 10 skenario terbaik (kolom asli dataset)")
+        st.markdown("### Top 10 skenario terbaik")
         st.dataframe(res_sorted.head(10), use_container_width=True)
 
         st.caption("Hasil optimasi ini berbasis pola dataset historis (bukan data akun user tertentu).")
